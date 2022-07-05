@@ -1,18 +1,38 @@
 
+#Instalacija i ucitavanje bibloteka
+#install.packages("ggplot2")
 library(ggplot2)
+#install.packages("ggeasy")
 library(ggeasy)
+#install.packages("caret")
 library(caret)
+#install.packages("dplyr")
 library(dplyr)
+#install.packages("data.table")
 library(data.table)
+#install.packages("quanteda")
 library(quanteda)
+#install.packages("wordcloud")
 library(wordcloud)
+#install.packages("tidytext")
 library(tidytext)
+#install.packages("tokenizers")
 library(tokenizers)
+#install.packages("tm")
 library(tm)
+#install.packages("tidyr")
 library(tidyr)
+#install.packages(igraph)
 library(igraph)
+#install.packages(glue)
 library(glue)
+#install.packages("psych")
+library(psych)
+#install.packages("plotly")
+library(plotly)
 
+#Dodatna podesavanja
+options(scipen = 999)
 #Ucitavanje podataka
 data.og <- read.csv("data/covid.csv", stringsAsFactors = FALSE)
 View(data.og)
@@ -54,32 +74,53 @@ data$SentimentNum <- replace(data$SentimentNum,
 
 data$SentimentNum <- as.numeric(data$SentimentNum)
 
-#Skor senetimenata u korpusu
-
-neutral <- length(which(data$SentimentNum == 0))
-positive <- length(which(data$SentimentNum > 0))
-negative <- length(which(data$SentimentNum < 0))
-
-BrojTvitova <- c(positive,neutral,negative)
-Sentiment <- c("Positive","Neutral","Negative")
-output <- data.frame(Sentiment, BrojTvitova)
-output$Sentiment<-factor(output$Sentiment,levels=Sentiment)
-
-ggplot(output, aes(x=Sentiment,y=BrojTvitova))+
-  geom_bar(stat = "identity", aes(fill = Sentiment))+
-  ggtitle("Prikaz tipova sentimenta u 5000 tvitova") +
-  scale_fill_brewer(palette="Set3")
-
 #Kreiranje varijable sa duzinom tvitova
 data$TweetLen <- count_characters(data$OriginalTweet)
-View(data)
+head(data)
 
-#Pregled lokacija 
+#Deskriptivna statistika baze podataka
+describe(data, na.rm = TRUE, interp=FALSE,skew = TRUE, ranges = TRUE,trim=.1,
+         type=3,check=TRUE,fast=NULL,quant=TRUE, IQR=FALSE,omit=FALSE,data=NULL) 
+deviation
+#Duzina tvita u odnosu na sentiment - 
+shapiro.test(data$TweetLen)
+kruskal.test(data$TweetLen, data$Sentiment)
+
+data %>%
+  filter(!is.na(TweetLen)) %>%
+  ggplot(aes(x= Sentiment, y= TweetLen)) +
+  geom_boxplot() + 
+  ggtitle("Duzina tvita u odnosu na sentiment") + 
+  xlab("Sentiment") +
+  ylab("Duzina tvita")
+
+#Skor senetimenata u korpusu 
+table(data$Sentiment)
+
+data %>% 
+  ggplot(aes(x=Sentiment)) +
+  geom_bar(aes(fill = Sentiment)) +
+  ggtitle("Prikaz tipova sentimenta u 5000 tvitova") +
+  xlab("Sentiment") +
+  ylab("Broj tvitova") +
+  scale_fill_brewer(palette="Set3")
+
+#Broj tvitova po danu
+data$TweetAt <- as.Date(data$TweetAt, format = "%d/%m/%y") #dis ok
+dates <- as.data.frame(data$TweetAt) #dis ok
+dates %>%
+  ggplot(aes(x=data$TweetAt)) + 
+  stat_count(geom="line", aes(y=..count..)) +
+  theme_light() +
+  xlab(label = "Datum") +
+  ylab(label = NULL) +
+  ggtitle(label = "Broj tvitova po danu")
+
+#Pregled lokacija sa kojih je tvitovano 
 locations <- removeWords(data$Location, stopwords("SMART"))
 wordcloud(locations, min.freq = 1, max.words = 100, scale = c(2.2,1),
           stopwords = TRUE ,colors=brewer.pal(8, "Set3"), random.color = T, 
           random.order = F)
-
 
 #Tokenizacija tvitova
 clean.tweet <- tokens(data$OriginalTweet,
@@ -121,14 +162,14 @@ wordcloud(corpus.tweet, min.freq = 1, max.words = 100, scale = c(2.2,1),
           stopwords = TRUE ,colors=brewer.pal(8, "Accent"), random.color = T, 
           random.order = F)
 
-#Prikaz 20 najfrekventnijih reci u korpusu
+#Prikaz 20 najfrekventnijih engrama u korpusu
 ggplot(tdm.tweet[1:20,], aes(x=reorder(word, freq), y=freq)) + 
   geom_bar(stat="identity", fill = "#de5833") +
   xlab("Rec") + 
   ylab("Broj pojavljivanja u korpusu") + 
   coord_flip() +
   theme(axis.text=element_text(size=7)) +
-  ggtitle("Najfrekventnije reci u korpusu") +
+  ggtitle("Najfrekventniji engrami u korpusu") +
   ggeasy::easy_center_title()
 
 #Izdvajanje bigrama
@@ -159,6 +200,7 @@ bigram.count <- bigram.tweet %>%
 bigram.count %>% head(20)
 
 #Prikaz distribucije bigrama u tekstu
+#ovo srediti naci objasnjenje u radu tacno sta je 
 bigram.count %>% 
   mutate(weight = log(weight + 1)) %>% 
   ggplot(mapping = aes(x = weight)) +
@@ -181,12 +223,15 @@ bigram.mreza <-  bigram.count %>%
 plot(
   bigram.mreza, 
   vertex.size = 1,
-  vertex.color = "lightblue",
+  vertex.color = "light blue",
   vertex.label.color = "black", 
   vertex.label.cex = 0.6, 
-  vertex.label.dist = 2,
+  vertex.label.dist = 2
+  ,
   edge.color = "gray", 
   main = "Mreza bigrama u korpusu", 
   sub = glue("Weight Threshold: {threshold}"), 
   alpha = 20
 )
+
+
