@@ -30,9 +30,12 @@ library(glue)
 library(psych)
 #install.packages("plotly")
 library(plotly)
+#install.packages("nnet")
+library(nnet)
 
 #Dodatna podesavanja
 options(scipen = 999)
+
 #Ucitavanje podataka
 data.og <- read.csv("data/covid.csv", stringsAsFactors = FALSE)
 View(data.og)
@@ -81,7 +84,7 @@ head(data)
 #Deskriptivna statistika baze podataka
 describe(data, na.rm = TRUE, interp=FALSE,skew = TRUE, ranges = TRUE,trim=.1,
          type=3,check=TRUE,fast=NULL,quant=TRUE, IQR=FALSE,omit=FALSE,data=NULL) 
-deviation
+
 #Duzina tvita u odnosu na sentiment - 
 shapiro.test(data$TweetLen)
 kruskal.test(data$TweetLen, data$Sentiment)
@@ -136,7 +139,9 @@ clean.tweet <- clean.tweet %>%
   tokens_tolower() %>%
   tokens_remove(stopwords("SMART")) %>%
   tokens_keep(min_nchar = 2) %>%
-  tokens_wordstem(language = "english")
+  tokens_wordstem(language = "english") %>%
+
+clean.list <- as.list(clean.tweet)
 
 #Kreiranje liste stop reci
 stopwords.tweet <- c("covid2019", "covid_19", "covid19",
@@ -144,17 +149,18 @@ stopwords.tweet <- c("covid2019", "covid_19", "covid19",
                      "corona", "coronavirus", "amp", "t.co", "https")
 
 #Kreiranje korpusa
-corpus.tweet <- Corpus(VectorSource(clean.tweet))
+corpus.tweet <- Corpus(VectorSource(clean.list))
 corpus.tweet <- tm_map(corpus.tweet, removeWords, stopwords.tweet)
+corpus.tweet <- tm_map(corpus.tweet, removePunctuation)
 
 #Kreiranje DTM
 tdm.tweet  <- TermDocumentMatrix(corpus.tweet)
 inspect(tdm.tweet)
-tdm.sparse <- removeSparseTerms(tdm.tweet, 0.999)
+tdm.sparse <- removeSparseTerms(tdm.tweet, 0.99)
 inspect(tdm.sparse)
 tdm.tweet <- as.matrix(tdm.sparse)
-tdm.tweet <- sort(rowSums(tdm.tweet), decreasing = TRUE)
-tdm.tweet <- data.frame(word = names(tdm.tweet), freq = tdm.tweet)
+tdm.freq <- sort(rowSums(tdm.tweet), decreasing = TRUE)
+tdm.freq <- data.frame(word = names(tdm.freq), freq = tdm.freq)
 
 set.seed(123)
 
@@ -163,7 +169,7 @@ wordcloud(corpus.tweet, min.freq = 1, max.words = 100, scale = c(2.2,1),
           random.order = F)
 
 #Prikaz 20 najfrekventnijih engrama u korpusu
-ggplot(tdm.tweet[1:20,], aes(x=reorder(word, freq), y=freq)) + 
+ggplot(tdm.freq[1:20,], aes(x=reorder(word, freq), y=freq)) + 
   geom_bar(stat="identity", fill = "#de5833") +
   xlab("Rec") + 
   ylab("Broj pojavljivanja u korpusu") + 
@@ -234,4 +240,25 @@ plot(
   alpha = 20
 )
 
+#Izdvajanje podataka za model
+tdm.df <- as.data.frame(t(tdm.tweet))
+tdm.df <- cbind(tdm.df, data$Sentiment)
+colnames(tdm.df)[221] <- "Sentiment"
+as.factor(tdm.df$Sentiment)
 
+#Kreiranje test i trening seta
+train.indices <- createDataPartition(tdm.df, p=0.8, list = FALSE)
+tdm.sent <- tdm.df$Sentiment
+tdm.term <- tdm.df[, !colnames(tdm.df) %in% "Sentiment"]
+tdm.term <- as.data.frame(tdm.term, stringsAsFactors = FALSE)
+typeof(tdm.term)
+View(tdm.term)
+traindata <- tdm.df[train.indices,]
+testdata <- tdm.df[1:220][-train.indices,]
+as.factor(tdm.sent)
+
+class(tdm.sent)
+#Kreiranje modela
+#Logisticka regresija model 1
+
+lrm1 <- multinom(formula = tdm.sent ~ tdm.term, data = tdm.df)
