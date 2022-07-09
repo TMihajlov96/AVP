@@ -30,8 +30,12 @@ library(glue)
 library(psych)
 #install.packages("plotly")
 library(plotly)
-#install.packages("nnet")
-library(nnet)
+#install.packages("e1071")
+library(e1071)
+#install.packages("glmnet")
+library(glmnet)
+#install.packages("quanteda.textmodels")
+library(quanteda.textmodels)
 
 #Dodatna podesavanja
 options(scipen = 999)
@@ -63,13 +67,13 @@ unique(data$Sentiment)
 #Kreiranje numericke verijable za 3 kategorije sentimenta
 data$SentimentNum <- data$Sentiment
 data$SentimentNum <- replace(data$SentimentNum, 
-                          which(data$SentimentNum 
-                                == "Negative"), 
-                          -1)
+                             which(data$SentimentNum 
+                                   == "Negative"), 
+                             -1)
 data$SentimentNum <- replace(data$SentimentNum, 
-                          which(data$SentimentNum
-                                == "Positive"), 
-                          1)
+                             which(data$SentimentNum
+                                   == "Positive"), 
+                             1)
 data$SentimentNum <- replace(data$SentimentNum, 
                              which(data$SentimentNum 
                                    == "Neutral"), 
@@ -82,10 +86,11 @@ data$TweetLen <- count_characters(data$OriginalTweet)
 head(data)
 
 #Deskriptivna statistika baze podataka
-describe(data, na.rm = TRUE, interp=FALSE,skew = TRUE, ranges = TRUE,trim=.1,
-         type=3,check=TRUE,fast=NULL,quant=TRUE, IQR=FALSE,omit=FALSE,data=NULL) 
+describe(data, na.rm = TRUE, interp=FALSE,skew = FALSE, ranges = TRUE,trim=.1,
+         type=3,check=TRUE,fast=NULL,quant=TRUE, 
+         IQR=FALSE,omit=TRUE,data=NULL) 
 
-#Duzina tvita u odnosu na sentiment - 
+#Duzina tvita u odnosu na sentiment 
 shapiro.test(data$TweetLen)
 kruskal.test(data$TweetLen, data$Sentiment)
 
@@ -109,8 +114,8 @@ data %>%
   scale_fill_brewer(palette="Set3")
 
 #Broj tvitova po danu
-data$TweetAt <- as.Date(data$TweetAt, format = "%d/%m/%y") #dis ok
-dates <- as.data.frame(data$TweetAt) #dis ok
+data$TweetAt <- as.Date(data$TweetAt, format = "%d/%m/%y")
+dates <- as.data.frame(data$TweetAt) 
 dates %>%
   ggplot(aes(x=data$TweetAt)) + 
   stat_count(geom="line", aes(y=..count..)) +
@@ -121,52 +126,82 @@ dates %>%
 
 #Pregled lokacija sa kojih je tvitovano 
 locations <- removeWords(data$Location, stopwords("SMART"))
+
 wordcloud(locations, min.freq = 1, max.words = 100, scale = c(2.2,1),
           stopwords = TRUE ,colors=brewer.pal(8, "Set3"), random.color = T, 
           random.order = F)
 
-#Tokenizacija tvitova
-clean.tweet <- tokens(data$OriginalTweet,
-                      what = "word1",
-                      remove_punct = TRUE,
-                      remove_symbols = TRUE,
-                      remove_numbers = TRUE,
-                      remove_url = TRUE,
-                      remove_twitter = TRUE)
+#Podela na test i trening set 
+train.indices <- createDataPartition(data$Sentiment, p=0.8, list = FALSE)
+traindata <- data[train.indices,]
+testdata <- data[-train.indices,]
 
-#Dodatno sredivanje tokena
-clean.tweet <- clean.tweet %>%
-  tokens_tolower() %>%
-  tokens_remove(stopwords("SMART")) %>%
-  tokens_keep(min_nchar = 2) %>%
-  tokens_wordstem(language = "english") %>%
+#Kreiranje trening korpusa
+corpus.train <- corpus(traindata$OriginalTweet)
 
-clean.list <- as.list(clean.tweet)
+#Kreiranje test korpusa
+corpus.test <- corpus(testdata$OriginalTweet)
+
+set.seed(123)
+
+wordcloud(corpus.train, min.freq = 1, max.words = 100, scale = c(2.2,1),
+          stopwords = TRUE ,colors=brewer.pal(8, "Accent"), random.color = T, 
+          random.order = F)
 
 #Kreiranje liste stop reci
 stopwords.tweet <- c("covid2019", "covid_19", "covid19",
                      "coronaviruspandemic", "covid-19", "covid",
                      "corona", "coronavirus", "amp", "t.co", "https")
 
-#Kreiranje korpusa
-corpus.tweet <- Corpus(VectorSource(clean.list))
-corpus.tweet <- tm_map(corpus.tweet, removeWords, stopwords.tweet)
-corpus.tweet <- tm_map(corpus.tweet, removePunctuation)
+#Tokenizacija trening seta
+tokens.train <- tokens(corpus.train,
+                      what = "word1",
+                      remove_punct = TRUE,
+                      remove_symbols = TRUE,
+                      remove_numbers = TRUE,
+                      remove_url = TRUE)
 
-#Kreiranje DTM
-tdm.tweet  <- TermDocumentMatrix(corpus.tweet)
-inspect(tdm.tweet)
+#Dodatno sredivanje tokena
+tokens.train <- tokens.train %>%
+  tokens_tolower() %>%
+  tokens_remove(stopwords("SMART")) %>%
+  tokens_remove(stopwords.tweet) %>%
+  tokens_keep(min_nchar = 2) %>%
+  tokens_wordstem(language = "english")
+
+#Tokenizacija test seta
+tokens.test <- tokens(testdata$OriginalTweet,
+                       what = "word1",
+                       remove_punct = TRUE,
+                       remove_symbols = TRUE,
+                       remove_numbers = TRUE,
+                       remove_url = TRUE)
+
+#Dodatno sredivanje tokena
+tokens.test <- tokens.test %>%
+  tokens_tolower() %>%
+  tokens_remove(stopwords("SMART")) %>%
+  tokens_remove(stopwords.tweet) %>%
+  tokens_keep(min_nchar = 2) %>%
+  tokens_wordstem(language = "english")
+
+#Kreiranje DFM (document-feature matrix)
+dfm.train <- dfm(tokens.train)
+dfm.test <- dfm(tokens.test)
+
+head(dfm.train)
+
+#Kreiranje TF-IDT (term-frequency inverse document-frequency)
+tfidf.train <- dfm_tfidf(dfm.train)
+tfidf.test <- dfm_tfidf(dfm.test)
+
+#Kreiranje varijable sa frekvencijama
+tdm.tweet  <- TermDocumentMatrix(corpus.train)
 tdm.sparse <- removeSparseTerms(tdm.tweet, 0.99)
 inspect(tdm.sparse)
 tdm.tweet <- as.matrix(tdm.sparse)
 tdm.freq <- sort(rowSums(tdm.tweet), decreasing = TRUE)
 tdm.freq <- data.frame(word = names(tdm.freq), freq = tdm.freq)
-
-set.seed(123)
-
-wordcloud(corpus.tweet, min.freq = 1, max.words = 100, scale = c(2.2,1),
-          stopwords = TRUE ,colors=brewer.pal(8, "Accent"), random.color = T, 
-          random.order = F)
 
 #Prikaz 20 najfrekventnijih engrama u korpusu
 ggplot(tdm.freq[1:20,], aes(x=reorder(word, freq), y=freq)) + 
@@ -179,7 +214,7 @@ ggplot(tdm.freq[1:20,], aes(x=reorder(word, freq), y=freq)) +
   ggeasy::easy_center_title()
 
 #Izdvajanje bigrama
-bigram.tweet <- tibble(txt = data$OriginalTweet) 
+bigram.tweet <- tibble(txt = traindata$OriginalTweet) 
 bigram.tweet <- bigram.tweet %>% 
   unnest_tokens(ngram, txt, token = "ngrams", n = 2)
 bigram.tweet <- as.data.frame(bigram.tweet)
@@ -187,8 +222,8 @@ bigram.tweet <- as.data.frame(bigram.tweet)
 #Dodatne stop reci
 stopwords.bigram <- c("trending", "new")
 stopwords.df <- tibble(
-                word = c(stopwords(kind = "english"),
-                stopwords.tweet, stopwords.bigram))
+  word = c(stopwords(kind = "english"),
+           stopwords.tweet, stopwords.bigram))
 
 #Razdvajanje bigrama u dve kolone i uklanjanje stop reci
 bigram.tweet <- bigram.tweet %>% 
@@ -206,12 +241,13 @@ bigram.count <- bigram.tweet %>%
 bigram.count %>% head(20)
 
 #Prikaz distribucije bigrama u tekstu
-#ovo srediti naci objasnjenje u radu tacno sta je 
 bigram.count %>% 
   mutate(weight = log(weight + 1)) %>% 
   ggplot(mapping = aes(x = weight)) +
   theme_light() +
   geom_histogram() +
+  xlab("Tezina") +
+  ylab("Broj")
   labs(title = "Ponderisana distribucija bigrama u korpusu") +
   ggeasy::easy_center_title()
 
@@ -236,29 +272,77 @@ plot(
   ,
   edge.color = "gray", 
   main = "Mreza bigrama u korpusu", 
-  sub = glue("Weight Threshold: {threshold}"), 
+  sub = glue("Prag tezina: {threshold}"), 
   alpha = 20
 )
 
-#Izdvajanje podataka za model
-tdm.df <- as.data.frame(t(tdm.tweet))
-tdm.df <- cbind(tdm.df, data$Sentiment)
-colnames(tdm.df)[221] <- "Sentiment"
-as.factor(tdm.df$Sentiment)
-
-#Kreiranje test i trening seta
-train.indices <- createDataPartition(tdm.df, p=0.8, list = FALSE)
-tdm.sent <- tdm.df$Sentiment
-tdm.term <- tdm.df[, !colnames(tdm.df) %in% "Sentiment"]
-tdm.term <- as.data.frame(tdm.term, stringsAsFactors = FALSE)
-typeof(tdm.term)
-View(tdm.term)
-traindata <- tdm.df[train.indices,]
-testdata <- tdm.df[1:220][-train.indices,]
-as.factor(tdm.sent)
-
-class(tdm.sent)
 #Kreiranje modela
-#Logisticka regresija model 1
+#Naive Bayes - DFM
+y <- traindata$Sentiment
+x <- dfm.train
 
-lrm1 <- multinom(formula = tdm.sent ~ tdm.term, data = tdm.df)
+naive.bayes <- textmodel_nb(x = x, y = y) 
+
+summary(naive.bayes)
+
+#Uskladjivanje dimenzija test i train matrica
+match.dfm <- dfm_match(dfm.test, 
+                       features = featnames(dfm.train))
+
+#Predvidjanje
+predict.sentnb <- predict(naive.bayes, newdata = match.dfm)
+
+#Procenjivanje modela
+table.sent <- table(predict.sentnb, testdata$Sentiment)
+conf.matnb <- confusionMatrix(table.sent, mode = "everything")
+conf.matnb
+
+table(testdata$Sentiment) %>% prop.table()
+
+#Naive Bayes - TFIDF
+y <- traindata$Sentiment
+x <- tfidf.train
+
+naive.bayes1 <- textmodel_nb(x = x, y = y)
+
+summary(naive.bayes1)
+
+#Uskladjivanje dimenzija test i train matrica
+match.tfidf <- dfm_match(tfidf.test, 
+                       features = featnames(tfidf.train))
+
+#Predvidjanje
+predict.sentnb1 <- predict(naive.bayes1, newdata = match.tfidf)
+
+#Procenjivanje modela
+table.sentnb1 <- table(predict.sentnb1, testdata$Sentiment)
+conf.matnb1 <- confusionMatrix(table.sent, mode = "everything")
+conf.matnb1
+
+#Kreiranje modela SVM - DFM
+svm1 <- textmodel_svm(x = dfm.train,
+                      y = traindata$Sentiment,
+                      weight = "uniform")
+
+#Kreiranje modela SVM - TFIDF
+svm.tfidf1 <- textmodel_svm(x = tfidf.train,
+                            y = traindata$Sentiment,
+                            weight = "uniform")
+
+#Predvidjanje
+predict.sentsvm <- predict(svm1, newdata = match.dfm)
+
+#Procenjivanje modela
+table.sent <- table(predict.sent, testdata$Sentiment)
+conf.matsvm <- confusionMatrix(table.sent, mode = "everything")
+conf.matsvm
+
+#Predvidjanje
+predict.sentsvm1 <- predict(svm.tfidf1, newdata = match.dfm)
+
+#Procenjivanje modela
+table.sent <- table(predict.sent, testdata$Sentiment)
+conf.matsvm1 <- confusionMatrix(table.sent, mode = "everything")
+conf.matsvm1
+
+
