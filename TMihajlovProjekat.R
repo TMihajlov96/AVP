@@ -246,8 +246,6 @@ bigram.count %>%
   ggplot(mapping = aes(x = weight)) +
   theme_light() +
   geom_histogram() +
-  xlab("Tezina") +
-  ylab("Broj")
   labs(title = "Ponderisana distribucija bigrama u korpusu") +
   ggeasy::easy_center_title()
 
@@ -272,7 +270,7 @@ plot(
   ,
   edge.color = "gray", 
   main = "Mreza bigrama u korpusu", 
-  sub = glue("Prag tezina: {threshold}"), 
+  sub = glue("Frekvencija bigrama: {threshold}"), 
   alpha = 20
 )
 
@@ -293,9 +291,12 @@ match.dfm <- dfm_match(dfm.test,
 predict.sentnb <- predict(naive.bayes, newdata = match.dfm)
 
 #Procenjivanje modela
-table.sent <- table(predict.sentnb, testdata$Sentiment)
-conf.matnb <- confusionMatrix(table.sent, mode = "everything")
+table.sentnb <- table(predict.sentnb, testdata$Sentiment)
+table.sentnb
+conf.matnb <- confusionMatrix(table.sentnb, mode = "everything")
 conf.matnb
+
+compute.eval.metrics
 
 table(testdata$Sentiment) %>% prop.table()
 
@@ -316,7 +317,8 @@ predict.sentnb1 <- predict(naive.bayes1, newdata = match.tfidf)
 
 #Procenjivanje modela
 table.sentnb1 <- table(predict.sentnb1, testdata$Sentiment)
-conf.matnb1 <- confusionMatrix(table.sent, mode = "everything")
+table.sentnb1
+conf.matnb1 <- confusionMatrix(table.sentnb1, mode = "everything")
 conf.matnb1
 
 #Kreiranje modela SVM - DFM
@@ -333,16 +335,18 @@ svm.tfidf1 <- textmodel_svm(x = tfidf.train,
 predict.sentsvm <- predict(svm1, newdata = match.dfm)
 
 #Procenjivanje modela
-table.sent <- table(predict.sent, testdata$Sentiment)
-conf.matsvm <- confusionMatrix(table.sent, mode = "everything")
+table.sentsvm <- table(predict.sentsvm, testdata$Sentiment)
+table.sentsvm
+conf.matsvm <- confusionMatrix(table.sentsvm, mode = "everything")
 conf.matsvm
 
 #Predvidjanje
 predict.sentsvm1 <- predict(svm.tfidf1, newdata = match.dfm)
 
 #Procenjivanje modela
-table.sent <- table(predict.sent, testdata$Sentiment)
-conf.matsvm1 <- confusionMatrix(table.sent, mode = "everything")
+table.sentsvm1 <- table(predict.sentsvm1, testdata$Sentiment)
+table.sentsvm1
+conf.matsvm1 <- confusionMatrix(table.sentsvm1, mode = "everything")
 conf.matsvm1
 
 
